@@ -52,17 +52,18 @@ works_paragraphs = works_paragraphs %>%
 works_paragraphs = works_paragraphs %>%
   filter(grepl('[a-z]', paragraph))
 
-# seperate paragraphs into training, validation, and testing
-train_frac = .8
-valid_frac = .1
-test_frac = .1
-
-set.seed(123456)
-works_paragraphs$rand = sample(1:nrow(works_paragraphs), size = nrow(works_paragraphs), replace = F)
-
+# remove paragraphs that have too few words (these are usually out-of-context paragraphs)
 works_paragraphs = works_paragraphs %>%
-  mutate(rand_mod = rand %% 10,
-         grp = ifelse(rand_mod <= 7, 'train', ifelse(rand_mod == 8, 'valid', 'test')))
+  mutate(paragraph = gsub('^ +| +$', '', paragraph),
+         space_cnt = str_count(paragraph, ' +')) %>%
+  filter(space_cnt >= 2)
+
+# seperate paragraphs into training, validation, and testing on a per-title basis
+works_paragraphs = works_paragraphs %>%
+  group_by(title) %>%
+  mutate(rn = row_number(),
+         n = n(),
+         grp = ifelse(rn / n <= .8, 'train', ifelse(rn / n <= .9, 'valid', 'test')))
 
 describe(works_paragraphs$grp)
 
@@ -95,9 +96,18 @@ works_paragraphs = works_paragraphs %>%
 
 ## finally, break into words
 works_words = works_paragraphs %>%
+  ungroup() %>%
   unnest_tokens(word, paragraph)
 
-n_distinct(works_words$word)  # 38907
+n_distinct(works_words$word)  # 38864
 
-# save final output for model training
+# examine infrequent words
+works_words_infreq = works_words %>%
+  count(word) %>%
+  arrange(nn)
+
+# based onthe examination, remove words without any English characters
+works_words = works_words %>%
+  filter(grepl('[a-z]', word))
+
 write_csv(works_words, 'works_words.csv')
